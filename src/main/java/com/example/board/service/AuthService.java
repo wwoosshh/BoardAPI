@@ -35,12 +35,12 @@ public class AuthService {
                        UserService userService,
                        PasswordEncoder passwordEncoder,
                        JwtTokenProvider tokenProvider,
-                       RefreshTokenService refreshTokenService) {  // 이 줄 추가
+                       RefreshTokenService refreshTokenService) {
         this.userRepository = userRepository;
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
-        this.refreshTokenService = refreshTokenService;  // 이 줄 추가
+        this.refreshTokenService = refreshTokenService;
     }
 
     @Transactional
@@ -51,7 +51,8 @@ public class AuthService {
                     request.getUsername(),
                     request.getPassword(),
                     request.getEmail(),
-                    request.getName()
+                    request.getName(),
+                    request.getNickname()  // 닉네임 추가
             );
         } catch (Exception e) {
             logger.error("회원가입 실패: {}", e.getMessage(), e);
@@ -102,7 +103,7 @@ public class AuthService {
             // 유저 정보를 DTO로 변환
             UserDto userDto = UserDto.fromEntity(user);
 
-            logger.info("로그인 성공: {}", user.getUsername());
+            logger.info("로그인 성공: {} (닉네임: {})", user.getUsername(), user.getNickname());
             return new AuthDto.LoginResponse(accessToken, refreshToken.getToken(), userDto);
 
         } catch (Exception e) {

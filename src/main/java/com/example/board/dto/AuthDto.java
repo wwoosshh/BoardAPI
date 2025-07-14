@@ -10,6 +10,7 @@ public class AuthDto {
         private String password;
         private String email;
         private String name;
+        private String nickname;  // 닉네임 필드 추가
     }
 
     @Data
@@ -21,7 +22,7 @@ public class AuthDto {
     @Data
     public static class LoginResponse {
         private String accessToken;
-        private String refreshToken;  // 이 필드 추가
+        private String refreshToken;
         private UserDto user;
 
         public LoginResponse(String accessToken, String refreshToken, UserDto user) {
@@ -30,10 +31,12 @@ public class AuthDto {
             this.user = user;
         }
     }
+
     @Data
     public static class TokenRefreshRequest {
         private String refreshToken;
     }
+
     @Data
     public static class TokenRefreshResponse {
         private String accessToken;

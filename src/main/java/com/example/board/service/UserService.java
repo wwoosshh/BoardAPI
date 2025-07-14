@@ -11,7 +11,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -54,6 +56,11 @@ public class UserService {
 
     @Transactional
     public UserDto registerUser(String username, String password, String email, String name) {
+        return registerUser(username, password, email, name, null);
+    }
+
+    @Transactional
+    public UserDto registerUser(String username, String password, String email, String name, String nickname) {
         if (userRepository.existsByUsername(username)) {
             throw new RuntimeException("이미 사용 중인 사용자 이름입니다.");
         }
@@ -62,19 +69,46 @@ public class UserService {
             throw new RuntimeException("이미 사용 중인 이메일입니다.");
         }
 
+        // 닉네임 설정 (제공되지 않으면 이름 또는 사용자명 사용)
+        String finalNickname = nickname;
+        if (finalNickname == null || finalNickname.trim().isEmpty()) {
+            finalNickname = name != null && !name.trim().isEmpty() ? name : username;
+        }
+
+        // 닉네임 중복 체크 및 자동 조정
+        finalNickname = ensureUniqueNickname(finalNickname);
+
         User user = User.builder()
                 .username(username)
                 .password(passwordEncoder.encode(password))
                 .email(email)
                 .name(name)
+                .nickname(finalNickname)
                 .role(UserRole.ROLE_USER)
-                .enabled(true)  // 👈 명시적으로 true 설정
-                .locked(false)  // 👈 명시적으로 false 설정
-                .warningCount(0) // 👈 명시적으로 0 설정
+                .enabled(true)
+                .locked(false)
+                .warningCount(0)
                 .build();
 
         User savedUser = userRepository.save(user);
+
+        System.out.println("👤 새 사용자 등록: " + savedUser.getUsername() +
+                " (닉네임: " + savedUser.getNickname() + ")");
+
         return UserDto.fromEntity(savedUser);
+    }
+
+    // 닉네임 중복 체크 및 고유한 닉네임 생성
+    private String ensureUniqueNickname(String baseNickname) {
+        String nickname = baseNickname;
+        int counter = 1;
+
+        while (userRepository.findByNickname(nickname).isPresent()) {
+            nickname = baseNickname + counter;
+            counter++;
+        }
+
+        return nickname;
     }
 
     @Transactional
@@ -82,9 +116,14 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다: " + userId));
 
-        // 관리자 권한은 직접 변경할 수 없음 (보안상 이유)
-        if (role == UserRole.ROLE_ADMIN) {
-            throw new RuntimeException("관리자 권한은 시스템에서만 부여할 수 있습니다.");
+        // 매니저 권한은 직접 변경할 수 없음 (보안상 이유)
+        if (role == UserRole.ROLE_MANAGER) {
+            throw new RuntimeException("매니저 권한은 시스템에서만 부여할 수 있습니다.");
+        }
+
+        // 매니저 계정은 권한 변경할 수 없음
+        if (user.getRole() == UserRole.ROLE_MANAGER) {
+            throw new RuntimeException("매니저 계정의 권한은 변경할 수 없습니다.");
         }
 
         UserRole oldRole = user.getRole();
@@ -183,14 +222,74 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다: " + userId));
 
-        // 관리자는 삭제할 수 없음
-        if (user.getRole() == UserRole.ROLE_ADMIN) {
-            throw new RuntimeException("관리자 계정은 삭제할 수 없습니다.");
+        // 매니저는 삭제할 수 없음
+        if (user.getRole() == UserRole.ROLE_MANAGER) {
+            throw new RuntimeException("매니저 계정은 삭제할 수 없습니다.");
         }
 
         String username = user.getUsername();
         userRepository.delete(user);
 
         System.out.println("🗑️ 사용자 삭제: " + username);
+    }
+
+    // 매니저 대시보드 정보
+    @Transactional(readOnly = true)
+    public Map<String, Object> getManagerDashboard() {
+        Map<String, Object> dashboard = new HashMap<>();
+
+        // 사용자 통계
+        long totalUsers = userRepository.count();
+        long managerCount = userRepository.findAll().stream()
+                .filter(u -> u.getRole() == UserRole.ROLE_MANAGER).count();
+        long adminCount = userRepository.findAll().stream()
+                .filter(u -> u.getRole() == UserRole.ROLE_ADMIN).count();
+        long moderatorCount = userRepository.findAll().stream()
+                .filter(u -> u.getRole() == UserRole.ROLE_MODERATOR).count();
+        long userCount = userRepository.findAll().stream()
+                .filter(u -> u.getRole() == UserRole.ROLE_USER).count();
+
+        Map<String, Long> userStats = new HashMap<>();
+        userStats.put("total", totalUsers);
+        userStats.put("manager", managerCount);
+        userStats.put("admin", adminCount);
+        userStats.put("moderator", moderatorCount);
+        userStats.put("user", userCount);
+
+        dashboard.put("userStats", userStats);
+
+        // 최근 가입한 사용자들
+        List<UserDto> recentUsers = userRepository.findAll().stream()
+                .sorted((u1, u2) -> u2.getCreatedDate().compareTo(u1.getCreatedDate()))
+                .limit(5)
+                .map(UserDto::fromEntity)
+                .collect(Collectors.toList());
+
+        dashboard.put("recentUsers", recentUsers);
+
+        return dashboard;
+    }
+
+    // 사용자 검색 메서드
+    @Transactional(readOnly = true)
+    public List<UserDto> searchUsers(String keyword) {
+        return userRepository.findAll().stream()
+                .filter(user ->
+                        user.getUsername().toLowerCase().contains(keyword.toLowerCase()) ||
+                                user.getName().toLowerCase().contains(keyword.toLowerCase()) ||
+                                user.getEmail().toLowerCase().contains(keyword.toLowerCase()) ||
+                                user.getNickname().toLowerCase().contains(keyword.toLowerCase())
+                )
+                .map(UserDto::fromEntity)
+                .collect(Collectors.toList());
+    }
+
+    // 역할별 사용자 조회
+    @Transactional(readOnly = true)
+    public List<UserDto> getUsersByRole(UserRole role) {
+        return userRepository.findAll().stream()
+                .filter(user -> user.getRole() == role)
+                .map(UserDto::fromEntity)
+                .collect(Collectors.toList());
     }
 }

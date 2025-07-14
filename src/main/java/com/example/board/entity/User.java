@@ -33,8 +33,12 @@ public class User {
 
     private String name;
 
+    // 닉네임 필드 추가 (게시글/댓글에서 표시될 이름)
+    @Column(nullable = false, unique = true, length = 50)
+    private String nickname;
+
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 50)
     private UserRole role;
 
     @ManyToMany(fetch = FetchType.EAGER)
@@ -54,12 +58,15 @@ public class User {
     @Column(name = "created_date")
     private LocalDateTime createdDate;
 
-
     @PrePersist
     protected void onCreate() {
         createdDate = LocalDateTime.now();
         if (role == null) {
             role = UserRole.ROLE_USER;
+        }
+        // 닉네임이 없으면 이름으로 설정
+        if (nickname == null || nickname.trim().isEmpty()) {
+            nickname = name != null ? name : username;
         }
         // 기본값 강제 설정
         enabled = true;

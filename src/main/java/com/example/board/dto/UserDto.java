@@ -22,6 +22,7 @@ public class UserDto {
     private String username;
     private String email;
     private String name;
+    private String nickname;  // 닉네임 필드 추가
     private UserRole role;
     @Builder.Default
     private Set<Long> managedCategoryIds = new HashSet<>();
@@ -44,6 +45,7 @@ public class UserDto {
                 .username(user.getUsername())
                 .email(user.getEmail())
                 .name(user.getName())
+                .nickname(user.getNickname())  // 닉네임 추가
                 .role(user.getRole())
                 .managedCategoryIds(categoryIds)  // 실제 관리 게시판 ID들
                 .enabled(user.isEnabled())

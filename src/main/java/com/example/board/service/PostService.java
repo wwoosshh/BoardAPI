@@ -62,7 +62,7 @@ public class PostService {
         return PostDto.fromEntity(post);
     }
 
-    // 게시글 생성 (수정된 부분)
+    // 게시글 생성 (닉네임 사용)
     @Transactional
     public PostDto createPost(PostDto postDto) {
         User user = null;
@@ -74,7 +74,8 @@ public class PostService {
                     !auth.getPrincipal().equals("anonymousUser")) {
                 user = userRepository.findByUsername(auth.getName()).orElse(null);
                 if (user != null) {
-                    System.out.println("✍️ 게시글 작성자: " + user.getUsername() + " (" + user.getRole() + ")");
+                    System.out.println("✍️ 게시글 작성자: " + user.getUsername() +
+                            " (닉네임: " + user.getNickname() + ", 권한: " + user.getRole() + ")");
                 }
             }
         } catch (Exception e) {
@@ -89,22 +90,28 @@ public class PostService {
             System.out.println("📋 게시판: " + category.getName());
         }
 
+        // 작성자 설정: 닉네임 우선 사용
+        String authorName = "익명";
+        if (user != null) {
+            authorName = user.getNickname() != null ? user.getNickname() :
+                    (user.getName() != null ? user.getName() : user.getUsername());
+        }
+
         Post post = Post.builder()
                 .title(postDto.getTitle())
                 .content(postDto.getContent())
-                .author(postDto.getAuthor() != null ? postDto.getAuthor() :
-                        (user != null ? user.getUsername() : "익명"))
+                .author(authorName)  // 닉네임 사용
                 .user(user)
                 .category(category)
                 .build();
 
         Post savedPost = postRepository.save(post);
-        System.out.println("✅ 게시글 작성 완료: " + savedPost.getTitle());
+        System.out.println("✅ 게시글 작성 완료: " + savedPost.getTitle() + " (작성자: " + authorName + ")");
 
         return PostDto.fromEntity(savedPost);
     }
 
-    // 게시글 수정 (권한 체크 수정)
+    // 게시글 수정
     @Transactional
     public PostDto updatePost(Long id, PostDto postDto) {
         Post post = postRepository.findById(id)
@@ -121,7 +128,7 @@ public class PostService {
             // 인증 정보가 없어도 계속 진행 (임시 개발 환경)
         }
 
-        // 임시로 권한 체크 완화 (개발 환경)
+        // 권한 체크
         if (currentUser != null && !isAllowedToModify(currentUser, post)) {
             throw new RuntimeException("게시글을 수정할 권한이 없습니다");
         }
@@ -140,7 +147,7 @@ public class PostService {
         return PostDto.fromEntity(updatedPost);
     }
 
-    // 게시글 삭제 (권한 체크 수정)
+    // 게시글 삭제
     @Transactional
     public void deletePost(Long id) {
         Post post = postRepository.findById(id)
@@ -157,7 +164,7 @@ public class PostService {
             // 인증 정보가 없어도 계속 진행 (임시 개발 환경)
         }
 
-        // 임시로 권한 체크 완화 (개발 환경)
+        // 권한 체크
         if (currentUser != null && !isAllowedToModify(currentUser, post)) {
             throw new RuntimeException("게시글을 삭제할 권한이 없습니다");
         }
@@ -165,11 +172,23 @@ public class PostService {
         postRepository.delete(post);
     }
 
-    // 게시글 수정/삭제 권한 체크
+    // 게시글 수정/삭제 권한 체크 (권한 체계 수정)
     private boolean isAllowedToModify(User user, Post post) {
+        // 🏢 매니저는 모든 글을 수정/삭제 가능
+        if (user.getRole() == UserRole.ROLE_MANAGER) {
+            System.out.println("👑 매니저 권한으로 수정/삭제 허용: " + user.getUsername());
+            return true;
+        }
+
         // 🔑 관리자는 모든 글을 수정/삭제 가능
         if (user.getRole() == UserRole.ROLE_ADMIN) {
             System.out.println("🔑 관리자 권한으로 수정/삭제 허용: " + user.getUsername());
+            return true;
+        }
+
+        // 🛡️ 관리자회원은 모든 글을 수정/삭제 가능
+        if (user.getRole() == UserRole.ROLE_MODERATOR) {
+            System.out.println("🛡️ 관리자회원 권한으로 수정/삭제 허용: " + user.getUsername());
             return true;
         }
 
@@ -177,19 +196,6 @@ public class PostService {
         if (post.getUser() != null && post.getUser().getId().equals(user.getId())) {
             System.out.println("👤 본인 글 수정/삭제 허용: " + user.getUsername());
             return true;
-        }
-
-        // 📋 관리자회원이고, 해당 게시판의 관리자라면 수정/삭제 가능
-        if (user.getRole() == UserRole.ROLE_MODERATOR && post.getCategory() != null) {
-            boolean hasPermission = user.getManagedCategories().contains(post.getCategory());
-            if (hasPermission) {
-                System.out.println("📋 게시판 관리자 권한으로 수정/삭제 허용: " +
-                        user.getUsername() + " → " + post.getCategory().getName());
-                return true;
-            } else {
-                System.out.println("❌ 게시판 관리 권한 없음: " +
-                        user.getUsername() + " (요청: " + post.getCategory().getName() + ")");
-            }
         }
 
         System.out.println("❌ 수정/삭제 권한 없음: " + user.getUsername());

@@ -17,9 +17,10 @@ public class PostDto {
     private Long id;
     private String title;
     private String content;
-    private String author;
+    private String author;          // 표시용 작성자 (닉네임)
     private Long userId;
     private String username;
+    private String userNickname;    // 작성자 닉네임
     private Long categoryId;
     private String categoryName;
     private LocalDateTime createdDate;
@@ -27,13 +28,20 @@ public class PostDto {
 
     // Entity -> DTO 변환 메서드
     public static PostDto fromEntity(Post post) {
+        // 작성자 표시: 사용자가 있으면 닉네임, 없으면 기존 author 필드 사용
+        String displayAuthor = post.getAuthor();
+        if (post.getUser() != null && post.getUser().getNickname() != null) {
+            displayAuthor = post.getUser().getNickname();
+        }
+
         return PostDto.builder()
                 .id(post.getId())
                 .title(post.getTitle())
                 .content(post.getContent())
-                .author(post.getAuthor())
+                .author(displayAuthor)  // 닉네임 또는 기존 author
                 .userId(post.getUser() != null ? post.getUser().getId() : null)
-                .username(post.getUser() != null ? post.getUser().getUsername() : post.getAuthor())
+                .username(post.getUser() != null ? post.getUser().getUsername() : null)
+                .userNickname(post.getUser() != null ? post.getUser().getNickname() : null)
                 .categoryId(post.getCategory() != null ? post.getCategory().getId() : null)
                 .categoryName(post.getCategory() != null ? post.getCategory().getName() : null)
                 .createdDate(post.getCreatedDate())
