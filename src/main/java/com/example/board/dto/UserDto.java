@@ -1,3 +1,4 @@
+// src/main/java/com/example/board/dto/UserDto.java (업데이트)
 package com.example.board.dto;
 
 import com.example.board.entity.User;
@@ -22,8 +23,15 @@ public class UserDto {
     private String username;
     private String email;
     private String name;
-    private String nickname;  // 닉네임 필드 추가
+    private String nickname;
     private UserRole role;
+
+    // 프로필 관련 필드 추가
+    private String profileImage;
+    private String bio;
+    private String website;
+    private String socialLinks;
+
     @Builder.Default
     private Set<Long> managedCategoryIds = new HashSet<>();
     private boolean enabled;
@@ -45,13 +53,29 @@ public class UserDto {
                 .username(user.getUsername())
                 .email(user.getEmail())
                 .name(user.getName())
-                .nickname(user.getNickname())  // 닉네임 추가
+                .nickname(user.getNickname())
+                .profileImage(user.getProfileImage())
+                .bio(user.getBio())
+                .website(user.getWebsite())
+                .socialLinks(user.getSocialLinks())
                 .role(user.getRole())
-                .managedCategoryIds(categoryIds)  // 실제 관리 게시판 ID들
+                .managedCategoryIds(categoryIds)
                 .enabled(user.isEnabled())
                 .locked(user.isLocked())
                 .warningCount(user.getWarningCount())
                 .createdDate(user.getCreatedDate())
                 .build();
+    }
+
+    // 프로필 정보 업데이트를 위한 DTO
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ProfileUpdateRequest {
+        private String nickname;
+        private String name;
+        private String bio;
+        private String website;
+        private String socialLinks;
     }
 }

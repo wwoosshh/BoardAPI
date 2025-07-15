@@ -284,6 +284,46 @@ public class UserService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional
+    public UserDto updateProfile(String username, UserDto.ProfileUpdateRequest request) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+
+        // 닉네임 변경 시 중복 체크
+        if (request.getNickname() != null && !request.getNickname().isEmpty() &&
+                !request.getNickname().equals(user.getNickname())) {
+
+            if (userRepository.findByNickname(request.getNickname()).isPresent()) {
+                throw new RuntimeException("이미 사용 중인 닉네임입니다.");
+            }
+
+            user.setNickname(request.getNickname());
+        }
+
+        // 이름 업데이트 (선택적)
+        if (request.getName() != null) {
+            user.setName(request.getName());
+        }
+
+        // 자기소개 업데이트 (선택적)
+        if (request.getBio() != null) {
+            user.setBio(request.getBio());
+        }
+
+        // 웹사이트 업데이트 (선택적)
+        if (request.getWebsite() != null) {
+            user.setWebsite(request.getWebsite());
+        }
+
+        // 소셜 링크 업데이트 (선택적)
+        if (request.getSocialLinks() != null) {
+            user.setSocialLinks(request.getSocialLinks());
+        }
+
+        User updatedUser = userRepository.save(user);
+        return UserDto.fromEntity(updatedUser);
+    }
+
     // 역할별 사용자 조회
     @Transactional(readOnly = true)
     public List<UserDto> getUsersByRole(UserRole role) {

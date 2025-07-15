@@ -1,3 +1,4 @@
+// src/main/java/com/example/board/entity/User.java (업데이트)
 package com.example.board.entity;
 
 import jakarta.persistence.*;
@@ -33,9 +34,25 @@ public class User {
 
     private String name;
 
-    // 닉네임 필드 추가 (게시글/댓글에서 표시될 이름)
+    // 닉네임 필드
     @Column(nullable = false, unique = true, length = 50)
     private String nickname;
+
+    // 프로필 이미지 필드 추가
+    @Column(name = "profile_image")
+    private String profileImage;
+
+    // 자기소개 필드 추가
+    @Column(name = "bio", columnDefinition = "TEXT")
+    private String bio;
+
+    // 웹사이트 URL 필드 추가
+    @Column(name = "website")
+    private String website;
+
+    // 소셜 미디어 링크 필드 추가
+    @Column(name = "social_links")
+    private String socialLinks;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)

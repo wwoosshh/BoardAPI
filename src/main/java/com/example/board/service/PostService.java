@@ -1,11 +1,14 @@
+// src/main/java/com/example/board/service/PostService.java (업데이트)
 package com.example.board.service;
 
 import com.example.board.dto.PostDto;
 import com.example.board.entity.BoardCategory;
 import com.example.board.entity.Post;
+import com.example.board.entity.PostAttachment;
 import com.example.board.entity.User;
 import com.example.board.entity.UserRole;
 import com.example.board.repository.BoardCategoryRepository;
+import com.example.board.repository.PostAttachmentRepository;
 import com.example.board.repository.PostRepository;
 import com.example.board.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,7 +16,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -23,14 +28,20 @@ public class PostService {
     private final PostRepository postRepository;
     private final BoardCategoryRepository boardCategoryRepository;
     private final UserRepository userRepository;
+    private final PostAttachmentRepository attachmentRepository;
+    private final FileStorageService fileStorageService;
 
     @Autowired
     public PostService(PostRepository postRepository,
                        BoardCategoryRepository boardCategoryRepository,
-                       UserRepository userRepository) {
+                       UserRepository userRepository,
+                       PostAttachmentRepository attachmentRepository,
+                       FileStorageService fileStorageService) {
         this.postRepository = postRepository;
         this.boardCategoryRepository = boardCategoryRepository;
         this.userRepository = userRepository;
+        this.attachmentRepository = attachmentRepository;
+        this.fileStorageService = fileStorageService;
     }
 
     // 모든 게시글 목록 조회
@@ -54,17 +65,22 @@ public class PostService {
                 .collect(Collectors.toList());
     }
 
-    // 게시글 상세 조회
-    @Transactional(readOnly = true)
+    // 게시글 상세 조회 (조회수 증가 추가)
+    @Transactional
     public PostDto getPost(Long id) {
         Post post = postRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("게시글을 찾을 수 없습니다: " + id));
+
+        // 조회수 증가
+        post.incrementViewCount();
+        post = postRepository.save(post);
+
         return PostDto.fromEntity(post);
     }
 
-    // 게시글 생성 (닉네임 사용)
+    // 게시글 생성 (첨부파일 처리 추가)
     @Transactional
-    public PostDto createPost(PostDto postDto) {
+    public PostDto createPost(PostDto postDto, List<MultipartFile> files) {
         User user = null;
 
         // 현재 인증된 사용자 가져오기
@@ -103,17 +119,50 @@ public class PostService {
                 .author(authorName)  // 닉네임 사용
                 .user(user)
                 .category(category)
+                .viewCount(0L)
+                .attachments(new ArrayList<>()) // 첨부파일 초기화
                 .build();
 
         Post savedPost = postRepository.save(post);
+
+        // 첨부파일 처리
+        if (files != null && !files.isEmpty()) {
+            List<PostAttachment> attachments = saveAttachments(files, savedPost);
+            savedPost.setAttachments(attachments);
+            savedPost = postRepository.save(savedPost);
+        }
+
         System.out.println("✅ 게시글 작성 완료: " + savedPost.getTitle() + " (작성자: " + authorName + ")");
 
         return PostDto.fromEntity(savedPost);
     }
 
-    // 게시글 수정
+    // 첨부파일 저장 메소드
+    private List<PostAttachment> saveAttachments(List<MultipartFile> files, Post post) {
+        List<PostAttachment> attachments = new ArrayList<>();
+
+        for (MultipartFile file : files) {
+            if (file.isEmpty()) continue;
+
+            String fileName = fileStorageService.storePostAttachment(file, post.getId());
+
+            PostAttachment attachment = PostAttachment.builder()
+                    .fileName(fileName)
+                    .originalFileName(file.getOriginalFilename())
+                    .fileSize(file.getSize())
+                    .fileType(file.getContentType())
+                    .post(post)
+                    .build();
+
+            attachments.add(attachmentRepository.save(attachment));
+        }
+
+        return attachments;
+    }
+
+    // 게시글 수정 (첨부파일 처리 추가)
     @Transactional
-    public PostDto updatePost(Long id, PostDto postDto) {
+    public PostDto updatePost(Long id, PostDto postDto, List<MultipartFile> newFiles, List<Long> filesToDelete) {
         Post post = postRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("게시글을 찾을 수 없습니다: " + id));
 
@@ -143,11 +192,34 @@ public class PostService {
             post.setCategory(category);
         }
 
+        // 삭제할 첨부파일 처리
+        if (filesToDelete != null && !filesToDelete.isEmpty()) {
+            for (Long fileId : filesToDelete) {
+                post.getAttachments().stream()
+                        .filter(a -> a.getId().equals(fileId))
+                        .findFirst()
+                        .ifPresent(attachment -> {
+                            // 파일 시스템에서 삭제
+                            fileStorageService.deleteFile(attachment.getFileName(), "post");
+                            // 엔티티에서 삭제
+                            post.getAttachments().remove(attachment);
+                            // DB에서 삭제
+                            attachmentRepository.delete(attachment);
+                        });
+            }
+        }
+
+        // 새 첨부파일 추가
+        if (newFiles != null && !newFiles.isEmpty()) {
+            List<PostAttachment> newAttachments = saveAttachments(newFiles, post);
+            post.getAttachments().addAll(newAttachments);
+        }
+
         Post updatedPost = postRepository.save(post);
         return PostDto.fromEntity(updatedPost);
     }
 
-    // 게시글 삭제
+    // 게시글 삭제 (첨부파일 삭제 추가)
     @Transactional
     public void deletePost(Long id) {
         Post post = postRepository.findById(id)
@@ -169,6 +241,12 @@ public class PostService {
             throw new RuntimeException("게시글을 삭제할 권한이 없습니다");
         }
 
+        // 첨부파일 삭제
+        for (PostAttachment attachment : post.getAttachments()) {
+            fileStorageService.deleteFile(attachment.getFileName(), "post");
+        }
+
+        // 게시글 삭제
         postRepository.delete(post);
     }
 
